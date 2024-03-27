@@ -17,6 +17,13 @@ def getAttributes(attributes, attribute_set, business_attributes, business_id):
             business_attribute['value'] = value
             business_attributes.append(business_attribute)
 
+def insertCheckIn(connection, business_id, day, time, count):
+    sql_str = f"""
+        INSERT INTO CheckIn(BusinessID, DAY, TIME, COUNT)
+        VALUES('{business_id}', '{day}', '{time}', {count});
+    """
+    connection.execute(sql_str)
+
 def insertBusiness(connection, business_id, business_name, stars, review_rating, check_ins, review_count, state, city, address, postal_code):
     sql_str = f"""
         INSERT INTO Business(BusinessID, BusinessName, Stars, ReviewRating, CheckIns, ReviewCount, State, City, Address, ZipCode)
@@ -158,9 +165,9 @@ def parseReviewData():
     outfile.close()
     f.close()
 
-def parseCheckinData():
-    with open('./yelp_checkin.JSON','r') as f:  
-        outfile = open('yelp_checkin.txt', 'w')
+def parseCheckinData(connection):
+    with open('./data/yelp_checkin.JSON','r') as f:  
+        #outfile = open('yelp_checkin.txt', 'w')
         line = f.readline()
         while line:
             data = json.loads(line)
@@ -168,9 +175,11 @@ def parseCheckinData():
             for (dayofweek,time) in data['time'].items():
                 for (hour,count) in time.items():
                     checkin_str = f"'{business_id}','{dayofweek}','{hour}',{count}"
-                    outfile.write(checkin_str + "\n")
+                    #outfile.write(checkin_str + "\n")
+                    insertCheckIn(connection.cursor(),business_id, dayofweek, hour, count)
             line = f.readline()
-    outfile.close()
+    #outfile.close()
+    connection.commit()
     f.close()
 
 try:
@@ -180,6 +189,6 @@ except:
 
 
 #parseBusinessData(conn)
-parseCheckinData()
+parseCheckinData(conn)
 #parseReviewData()
 
