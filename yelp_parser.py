@@ -205,7 +205,7 @@ except:
     print('Unable to connect to the database!')
 
 
-#parseBusinessData(conn)
-#parseCheckinData(conn)
+parseBusinessData(conn)
+parseCheckinData(conn)
 parseReviewData(conn)
 
