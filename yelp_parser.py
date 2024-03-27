@@ -1,32 +1,93 @@
 import json
 import re
-
+import psycopg2
 
 def cleanStringForSQL(s):
     return s.replace("'","''").replace("\n"," ")
 
-def getAttributes(attributes):
-    L = []
+def getAttributes(attributes, attribute_set, business_attributes, business_id):
     for (attribute, value) in list(attributes.items()):
         if isinstance(value, dict):
-            L += getAttributes(value)
+            getAttributes(value, attribute_set, business_attributes, business_id)
         else:
-            L.append((attribute,value))
-    return L
+            attribute_set.add(attribute)
+            business_attribute = {}
+            business_attribute['business_id'] = business_id
+            business_attribute['attribute'] = attribute
+            business_attribute['value'] = value
+            business_attributes.append(business_attribute)
+
+def insertBusiness(connection, business_id, business_name, stars, review_rating, check_ins, review_count, state, city, address, postal_code):
+    sql_str = f"""
+        INSERT INTO Business(BusinessID, BusinessName, Stars, ReviewRating, CheckIns, ReviewCount, State, City, Address, ZipCode)
+        VALUES ('{business_id}', '{business_name}', {stars}, {review_rating}, {check_ins}, {review_count}, '{state}', '{city}', '{address}', {postal_code});
+    """
+    connection.execute(sql_str)
+
+def insertAttribute(connection, attributes):
+    # if performance is bad, do a bulk insert
+    for attribute in attributes:
+        sql_str = f"""
+            INSERT INTO Attribute(AttributeName) VALUES ('{attribute}')
+        """
+        connection.execute(sql_str)
 
 
+def insertCategory(connection, categories):
+    for category in categories:
+        #print(category)
+        sql_str = f"""
+            INSERT INTO Category(CategoryName) VALUES ('{category}')
+        """
+        connection.execute(sql_str)
 
-def parseBusinessData():
-    with open('./yelp_business.JSON','r') as f:
-        business_outfile = open('./yelp_business.txt', 'w')
-        address_outfile = open('./yelp_address.txt', 'w')
-        category_outfile = open('./yelp_category.txt', 'w')
+def insertBusinessAttribute(connection, business_attributes):
+    for business_attribute in business_attributes:
+        value = None
+        flag = None
+        if(isinstance(business_attribute['value'], str)):
+            value = f"'{business_attribute['value']}'"
+            flag = "NULL"
+        else:
+            value = "NULL"
+            flag = business_attribute['value'] == True
+        sql_str = f"""
+            INSERT INTO BusinessAttribute(BusinessID, AttributeID, AttributeValue, AttributeFlag) 
+            SELECT 
+                b.BusinessID,
+                a.AttributeID, 
+                {value} AS AttributeValue,
+                {flag} AS AttributeFlag
+            FROM Business AS b
+            INNER JOIN Attribute AS a ON a.AttributeName = '{business_attribute['attribute']}'
+            WHERE b.BusinessID = '{business_attribute['business_id']}'
+        """
+        connection.execute(sql_str)
+
+def insertBusinessCategory(connection, business_categories):
+    for business_category in business_categories:
+        sql_str = f"""
+            INSERT INTO BusinessCategory(BusinessID, CategoryID) 
+            SELECT 
+                b.BusinessID,
+                c.CategoryID
+            FROM Business b
+            INNER JOIN Category AS c ON c.CategoryName = '{business_category['category']}'
+            WHERE b.BusinessID = '{business_category['business_id']}'
+        """
+        connection.execute(sql_str)
+
+def parseBusinessData(connection):
+    attributes = set()
+    categories = set()
+    business_attributes = []
+    business_categories = []
+
+    with open('./data/yelp_business.JSON','r') as f:
+        #business_outfile = open('./yelp_business.txt', 'w')
+        #address_outfile = open('./yelp_address.txt', 'w')
+        #category_outfile = open('./yelp_category.txt', 'w')
         line = f.readline()
-
-        name_size = 0
-        address_size = 0
-        business_size = 0
-        city_size = 0
 
         while line:
             data = json.loads(line)
@@ -35,28 +96,46 @@ def parseBusinessData():
             name = cleanStringForSQL(data['name'])
             address = cleanStringForSQL(data['address'])
             city = cleanStringForSQL(data['city'])
-            price_range_value = data['attributes'].get('RestaurantsPriceRange2')
-            is_open = data['attributes'].get('is_open')
+            state = cleanStringForSQL(data['state'])
+            zipcode = cleanStringForSQL(data['postal_code'])
+            stars = data['stars']
+            review_count = data['review_count']
+            check_ins = 0
+            review_rating = 0
 
-            name_size = max(name_size, len(name))
-            address_size = max(address_size, len(address))
-            city_size = max(city_size, len(city))
-            business_size = max(business_size, len(business))
+            insertBusiness(connection.cursor(), business, name, stars, review_rating, check_ins, review_count, state, city, address, zipcode)
 
-            address_str = f"'{business}','{address}','{city}','{data['state']}','{data['postal_code']}'"
-            business_str = f"'{business}','{name}',{data['stars']},{data['review_count'],{price_range_value},{is_open}}"
 
-            business_outfile.write(business_str + '\n')
-            address_outfile.write(address_str + '\n')
+            getAttributes(data['attributes'], attributes, business_attributes, business)
 
             for category in data['categories']:
-                category_str = "'{}','{}'".format(business, category)
-                category_outfile.write(category_str + '\n')
+                category = cleanStringForSQL(category)
+                categories.add(category)
+                business_category = {}
+                business_category['business_id'] = business
+                business_category['category'] = category
+                business_categories.append(business_category)
 
+            #address_str = f"'{business}','{address}','{city}','{data['state']}','{data['postal_code']}'"
+            #business_str = f"'{business}','{name}',{data['stars']},{data['review_count'],{price_range_value},{is_open}}"
+
+            #business_outfile.write(business_str + '\n')
+            #address_outfile.write(address_str + '\n')
+
+            #for category in data['categories']:
+            #    category_str = "'{}','{}'".format(business, category)
+            #    category_outfile.write(category_str + '\n')
             line = f.readline()
-    business_outfile.close()
-    address_outfile.close()
-    category_outfile.close()
+    
+    insertCategory(connection.cursor(), categories)
+    insertAttribute(connection.cursor(), attributes)
+    insertBusinessAttribute(connection.cursor(), business_attributes)
+    insertBusinessCategory(connection.cursor(), business_categories)
+    connection.commit()
+    
+    #business_outfile.close()
+    #address_outfile.close()
+    #category_outfile.close()
     f.close()
 
 
@@ -79,33 +158,6 @@ def parseReviewData():
     outfile.close()
     f.close()
 
-def parseUserData():
-    with open('./yelp_user.JSON','r') as f:
-        outfile =  open('./yelp_user.txt', 'w')
-        line = f.readline()
-        while line:
-            data = json.loads(line)
-            user_id = data['user_id']
-            user_str = \
-                      "'" + user_id + "'," + \
-                      "'" + cleanStringForSQL(data["name"]) + "'," + \
-                      "'" + cleanStringForSQL(data["yelping_since"]) + "'," + \
-                      str(data["review_count"]) + "," + \
-                      str(data["fans"]) + "," + \
-                      str(data["average_stars"]) + "," + \
-                      str(data["funny"]) + "," + \
-                      str(data["useful"]) + "," + \
-                      str(data["cool"])
-            outfile.write(user_str+"\n")
-
-            for friend in data["friends"]:
-                friend_str = "'" + user_id + "'" + "," + "'" + friend + "'" + "\n"
-                outfile.write(friend_str)
-            line = f.readline()
-
-    outfile.close()
-    f.close()
-
 def parseCheckinData():
     with open('./yelp_checkin.JSON','r') as f:  
         outfile = open('yelp_checkin.txt', 'w')
@@ -121,9 +173,13 @@ def parseCheckinData():
     outfile.close()
     f.close()
 
+try:
+    conn = psycopg2.connect("dbname='yelpdb' user='postgres' host='localhost' password='postgres'")
+except:
+    print('Unable to connect to the database!')
 
-parseBusinessData()
-parseUserData()
+
+#parseBusinessData(conn)
 parseCheckinData()
-parseReviewData()
+#parseReviewData()
 
