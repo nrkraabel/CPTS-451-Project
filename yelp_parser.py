@@ -17,6 +17,13 @@ def getAttributes(attributes, attribute_set, business_attributes, business_id):
             business_attribute['value'] = value
             business_attributes.append(business_attribute)
 
+def insertReview(connection, business_id, review, funny, cool, useful, review_stars, review_date):
+    sql_str = f"""
+        INSERT INTO Review(BusinessID, Funny, Cool, Useful, ReviewStars, ReviewText, ReviewDate)
+        VALUES('{business_id}', {funny}, {cool}, {useful}, {review_stars}, '{review}', '{review_date}');
+    """
+    connection.execute(sql_str)
+
 def insertCheckIn(connection, business_id, day, time, count):
     sql_str = f"""
         INSERT INTO CheckIn(BusinessID, DAY, TIME, COUNT)
@@ -146,23 +153,33 @@ def parseBusinessData(connection):
     f.close()
 
 
-def parseReviewData():
-    with open('./yelp_review.JSON','r') as f:
-        outfile =  open('./yelp_review.txt', 'w')
+def parseReviewData(connection):
+    with open('./data/yelp_review.JSON','r') as f:
+        #outfile =  open('./yelp_review.txt', 'w')
         line = f.readline()
         while line:
             data = json.loads(line)
-            review_str = "'" + data['user_id'] + "'," + \
-                         "'" + data['business_id'] + "'," + \
-                         str(data['stars']) + "," + \
-                         "'" + data['date'] + "'," + \
-                         "'" + cleanStringForSQL(data['text']) + "'," +  \
-                         str(data['useful']) + "," +  \
-                         str(data['funny']) + "," + \
-                         str(data['cool'])
-            outfile.write(review_str +'\n')
+            business_id = data['business_id']
+            stars = data['stars']
+            date = data['date']
+            funny = data['funny']
+            cool = data['cool']
+            useful = data['useful']
+            text = cleanStringForSQL(data['text'])
+
+            #review_str = "'" + data['user_id'] + "'," + \
+            #             "'" + data['business_id'] + "'," + \
+            #             str(data['stars']) + "," + \
+            #             "'" + data['date'] + "'," + \
+            #             "'" + cleanStringForSQL(data['text']) + "'," +  \
+            #             str(data['useful']) + "," +  \
+            #             str(data['funny']) + "," + \
+            #             str(data['cool'])
+            #outfile.write(review_str +'\n')
+            insertReview(connection.cursor(), business_id, text, funny, cool, useful, stars, date)
             line = f.readline()
-    outfile.close()
+    #outfile.close()
+    connection.commit()
     f.close()
 
 def parseCheckinData(connection):
@@ -189,6 +206,6 @@ except:
 
 
 #parseBusinessData(conn)
-parseCheckinData(conn)
-#parseReviewData()
+#parseCheckinData(conn)
+parseReviewData(conn)
 

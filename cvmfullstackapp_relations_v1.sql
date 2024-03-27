@@ -24,13 +24,12 @@ CREATE TABLE CheckIn(
 CREATE TABLE Review(
     ReviewID SERIAL PRIMARY KEY,
     BusinessID VARCHAR(25) NOT NULL,    
-    Review VARCHAR(1024) NOT NULL, 
     Funny INTEGER DEFAULT 0,
     Cool INTEGER DEFAULT 0,
     Useful INTEGER DEFAULT 0,
     ReviewStars INTEGER DEFAULT 0,
-    ReviewText VARCHAR(1024),
-    ReviewDate DATETIME NOT NULL,
+    ReviewText VARCHAR(1024) NOT NULL,
+    ReviewDate DATE NOT NULL,
     FOREIGN KEY(BusinessID) REFERENCES Business(BusinessID)
 );
 
