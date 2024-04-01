@@ -1,0 +1,34 @@
+select count(*) from "attribute" 
+count|
+-----+
+   81|
+   
+select count(*) from businessattribute 
+count |
+------+
+227536|
+
+select count(*) from business
+count|
+-----+
+11481|
+
+select count(*) from businesscategory 
+count|
+-----+
+33619|
+
+select count(*) from category  
+count|
+-----+
+  226|
+  
+select count(*) from checkin   
+count |
+------+
+481360|
+
+select count(*) from review   
+count |
+------+
+416479|
