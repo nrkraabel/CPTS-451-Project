@@ -133,37 +133,38 @@ def get_popular_businesses():
             """)
             return cur.fetchall()
 
-        
+def get_average_checkins():
+    with connect_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+            select AVG(totalCheckin) from (
+                select SUM(count) as totalCheckin from checkin
+                group by businessid,count
+            ) as fold_checkin_counts;
+            """)
+            return cur.fetchall()
+
 def get_successful_businesses():
     with connect_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-            WITH BusinessAge AS (
-                SELECT
-                    b.BusinessID,
-                    MIN(r.ReviewDate) AS FirstReviewDate,
-                    EXTRACT(YEAR FROM AGE(TIMESTAMP '2023-04-01', MIN(r.ReviewDate))) AS YearsInOperation
-                FROM
-                    Business b
-                JOIN
-                    Review r ON b.BusinessID = r.BusinessID
-                GROUP BY
-                    b.BusinessID
-                HAVING
-                    EXTRACT(YEAR FROM AGE(TIMESTAMP '2023-04-01', MIN(r.ReviewDate))) >= 3
+            WITH CategoryAverageCheckIns AS (
+                SELECT bc.CategoryID, AVG(c.COUNT) AS AvgCheckIns
+                FROM CheckIn c
+                JOIN BusinessCategory bc ON c.BusinessID = bc.BusinessID
+                GROUP BY bc.CategoryID
             ),
-            CategoryAverageCheckIns AS (
-                SELECT
-                    bc.CategoryID,
-                    AVG(c.COUNT) AS AvgCheckIns
-                FROM
-                    CheckIn c
-                JOIN
-                    BusinessCategory bc ON c.BusinessID = bc.BusinessID
-                GROUP BY
-                    bc.CategoryID
+            CategoryAverageReviews AS (
+                SELECT bc.CategoryID, AVG(sub.ReviewCount) AS AvgReviewCount
+                FROM BusinessCategory bc
+                JOIN (
+                    SELECT r.BusinessID, COUNT(*) AS ReviewCount
+                    FROM Review r
+                    GROUP BY r.BusinessID
+                ) sub ON bc.BusinessID = sub.BusinessID
+                GROUP BY bc.CategoryID
             ),
-            BusinessCheckIns AS (
+            BusinessCheckIns as (
                 SELECT
                     c.BusinessID,
                     SUM(c.COUNT) AS TotalCheckIns
@@ -171,55 +172,18 @@ def get_successful_businesses():
                     CheckIn c
                 GROUP BY
                     c.BusinessID
-            ),
-            FilteredBusinesses AS (
-                SELECT
-                    b.BusinessID,
-                    b.BusinessName,
-                    b.Address,
-                    b.City,
-                    b.State,
-                    b.Zipcode,
-                    COUNT(r.ReviewID) AS TotalReviews,
-                    SUM(c.COUNT) AS TotalCheckIns
-                FROM
-                    Business b
-                JOIN
-                    BusinessAge ba ON b.BusinessID = ba.BusinessID
-                JOIN
-                    BusinessCheckIns bci ON b.BusinessID = bci.BusinessID
-                JOIN
-                    Review r ON b.BusinessID = r.BusinessID
-                JOIN
-                    CheckIn c ON b.BusinessID = c.BusinessID
-                GROUP BY
-                    b.BusinessID, b.BusinessName, b.Address, b.City, b.State, b.Zipcode
             )
-            SELECT
-                DISTINCT fb.BusinessName,
-                fb.Address,
-                fb.City,
-                fb.State,
-                fb.Zipcode,
-                cat.CategoryName,
-                fb.TotalReviews,
-                fb.TotalCheckIns
-            FROM
-                FilteredBusinesses fb
-            JOIN
-                BusinessCategory bc ON fb.BusinessID = bc.BusinessID
-            JOIN
-                Category cat ON bc.CategoryID = cat.CategoryID
-            JOIN
-                CategoryAverageCheckIns cai ON bc.CategoryID = cai.CategoryID
-            WHERE
-                fb.TotalCheckIns > cai.AvgCheckIns
-            GROUP BY
-                fb.BusinessName, fb.Address, fb.City, fb.State, fb.Zipcode, cat.CategoryName, fb.TotalReviews, fb.TotalCheckIns
-            HAVING
-                fb.TotalReviews > 100
-            ORDER BY
-                fb.TotalReviews DESC;
+            SELECT DISTINCT b.BusinessName, b.Address, b.City, b.State, b.Zipcode, cat.CategoryName, COUNT(r.BusinessID) AS TotalReviews
+            FROM Business b
+            inner JOIN BusinessCategory bc ON b.BusinessID = bc.BusinessID
+            inner JOIN Category cat ON cat.CategoryID = bc.CategoryID
+            inner JOIN Review r ON r.BusinessID = b.BusinessID
+            inner JOIN CategoryAverageCheckIns caci ON bc.CategoryID = caci.CategoryID
+            inner JOIN CategoryAverageReviews car ON bc.CategoryID = car.CategoryID
+            inner join BusinessCheckIns bci on bci.BusinessID = b.Businessid
+            GROUP BY b.BusinessName, b.Address, b.City, b.State, b.Zipcode, cat.CategoryName, r.BusinessID, car.AvgReviewCount, bci.TotalCheckIns
+            having COUNT(r.businessid) > car.AvgReviewCount and bci.TotalCheckIns > 29.5
+            ORDER BY b.BusinessName; 
             """)
             return cur.fetchall()
 
@@ -245,16 +209,41 @@ def get_expensive_businesses():
             JOIN
                 Category cat ON bc.CategoryID = cat.CategoryID
             WHERE
-                LOWER(r.ReviewText) LIKE '%high priced%' OR
-                LOWER(r.ReviewText) LIKE '%high cost%' OR
-                LOWER(r.ReviewText) LIKE '%expensive%' OR
-                LOWER(r.ReviewText) LIKE '%that’s a bit pricey%' OR
-                LOWER(r.ReviewText) LIKE '%costs an arm and a leg%' OR
-                LOWER(r.ReviewText) LIKE '%exorbitant%' OR
-                LOWER(r.ReviewText) LIKE '%costly%' OR
-                LOWER(r.ReviewText) LIKE '%high end%' OR
-                LOWER(r.ReviewText) LIKE '%pricey%'
+                LOWER(r.ReviewText) LIKE '% high priced %' OR
+                LOWER(r.ReviewText) LIKE '% high cost %' OR
+                LOWER(r.ReviewText) LIKE '% expensive %' OR
+                LOWER(r.ReviewText) LIKE '% that’s a bit pricey %' OR
+                LOWER(r.ReviewText) LIKE '% costs an arm and a leg %' OR
+                LOWER(r.ReviewText) LIKE '% exorbitant %' OR
+                LOWER(r.ReviewText) LIKE '% costly %' OR
+                LOWER(r.ReviewText) LIKE '% high end %' OR
+                LOWER(r.ReviewText) LIKE '% pricey %'
             ORDER BY
                 b.BusinessName;
             """)
             return cur.fetchall()
+
+def list_category():
+    with connect_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("select distinct c.categoryname from category c ")
+            categories = cur.fetchall()
+            return categories
+
+def list_category_for_business(business_name):
+    with connect_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(""" select distinct c.categoryname from business b 
+                inner join businesscategory bc on bc.businessid = b.businessid 
+                inner join category c on c.categoryid = bc.categoryid 
+                where b.businessname = %s""", (business_name))
+            categories = cur.fetchall()
+            return categories
+
+def getOverallMedianIncome():
+    with connect_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("select PERCENTILE_CONT(0.5) within GROUP(order by medianIncome) from zipcodeData;")
+            result = cur.fetchall()
+            return result
+
